@@ -116,6 +116,10 @@ public sealed class Audio : IAudioEndpointVolumeCallback
     //    ourselves. On the user's USB audio device, sound stays silent after a
     //    direct set from 0 to 1 even though Windows reports 1% and not muted;
     //    Windows' own step up from 0 brings the sound back.
+    //  - Going down to 1 with the popup hidden: Windows' step would land on 0
+    //    and the correction would then be that same silent set from 0 to 1.
+    //    So the volume is first nudged to just above 3, Windows steps to 2,
+    //    and CorrectLoop takes it to 1. The volume never touches 0.
     const long RefreshPopupMs = 800; // let Windows see an even-target key this long after the last
     const long PopupUpMs = 2100;     // popup surely still up this long after a key Windows saw
     const double Nudge = 0.1;
@@ -171,6 +175,20 @@ public sealed class Audio : IAudioEndpointVolumeCallback
             {
                 direct = true;
                 swallow = true;
+            }
+            else if (!up && want > 0.05 && from < 3 + 0.05)
+            {
+                // Windows would step down to 0 here, and a set from 0 up to
+                // `want` leaves this device silent. Start just above 3 so
+                // Windows steps to 2 instead; CorrectLoop then sets `want`.
+                double start = want + 2 + Nudge;
+                preValue = start;
+                prePending = true;
+                preDone.Reset();
+                settled = start;
+                waitForPre = true;
+                passAt = now;
+                swallow = false;
             }
             else
             {
